@@ -7,30 +7,30 @@ import (
 	"strings"
 )
 
-// ApiVersion identifies the Bitquery API contract. V1 and V2 are
+// APIVersion identifies the Bitquery API contract. V1 and V2 are
 // separate contracts — never interchangeable.
-type ApiVersion int
+type APIVersion int
 
 const (
 	// V1 is the historical GraphQL API.
-	V1 ApiVersion = 1
+	V1 APIVersion = 1
 	// V2 is the streaming GraphQL API (queries + subscriptions).
-	V2 ApiVersion = 2
+	V2 APIVersion = 2
 )
 
-func (v ApiVersion) String() string {
+func (v APIVersion) String() string {
 	switch v {
 	case V1:
 		return "v1"
 	case V2:
 		return "v2"
 	default:
-		return fmt.Sprintf("ApiVersion(%d)", int(v))
+		return fmt.Sprintf("APIVersion(%d)", int(v))
 	}
 }
 
-// ParseApiVersion accepts "v1"/"1" and "v2"/"2".
-func ParseApiVersion(s string) (ApiVersion, error) {
+// ParseAPIVersion accepts "v1"/"1" and "v2"/"2".
+func ParseAPIVersion(s string) (APIVersion, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "v1", "1":
 		return V1, nil
@@ -45,10 +45,14 @@ func ParseApiVersion(s string) (ApiVersion, error) {
 // type, not a closed enum, so future regions can pass through.
 type Region string
 
+// Well-known Bitquery regional endpoint families.
 const (
+	// RegionEurope selects the Europe endpoint family and is the default.
 	RegionEurope Region = "europe"
-	RegionAsia   Region = "asia"
-	RegionUS     Region = "us"
+	// RegionAsia selects the Asia endpoint family.
+	RegionAsia Region = "asia"
+	// RegionUS selects the United States endpoint family.
+	RegionUS Region = "us"
 )
 
 func (r Region) normalized() (Region, error) {

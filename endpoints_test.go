@@ -4,7 +4,7 @@ import "testing"
 
 func TestHTTPURLRegions(t *testing.T) {
 	cases := []struct {
-		version ApiVersion
+		version APIVersion
 		region  Region
 		want    string
 	}{
@@ -76,14 +76,14 @@ func TestWebSocketURLOverrideWins(t *testing.T) {
 	}
 }
 
-func TestParseApiVersion(t *testing.T) {
-	if v, err := ParseApiVersion("v1"); err != nil || v != V1 {
+func TestParseAPIVersion(t *testing.T) {
+	if v, err := ParseAPIVersion("v1"); err != nil || v != V1 {
 		t.Fatalf("v1: %v %v", v, err)
 	}
-	if v, err := ParseApiVersion("2"); err != nil || v != V2 {
+	if v, err := ParseAPIVersion("2"); err != nil || v != V2 {
 		t.Fatalf("v2: %v %v", v, err)
 	}
-	if _, err := ParseApiVersion("v3"); err == nil {
+	if _, err := ParseAPIVersion("v3"); err == nil {
 		t.Fatal("expected error for v3")
 	}
 }

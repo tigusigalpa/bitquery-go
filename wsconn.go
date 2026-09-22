@@ -5,8 +5,11 @@ import "context"
 // WSMessageType is the WebSocket frame type.
 type WSMessageType int
 
+// WebSocket message types supported by WSConn.
 const (
-	WSMessageText   WSMessageType = 1
+	// WSMessageText is a UTF-8 WebSocket text frame.
+	WSMessageText WSMessageType = 1
+	// WSMessageBinary is a binary WebSocket frame.
 	WSMessageBinary WSMessageType = 2
 )
 

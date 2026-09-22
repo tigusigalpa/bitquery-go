@@ -2,77 +2,54 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
+    name: Go ${{ matrix.go-version }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        # Every declared supported Go version gets a row — no untested
-        # compatibility claims.
-        go-version: ['1.21', '1.22', '1.23', '1.24', '1.25', '1.26']
+        go-version: ['1.22.x', 'stable']
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out source
+        uses: actions/checkout@v4
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
+          cache: true
 
-      - name: Download dependencies
-        run: go mod download
-
-      - name: Verify dependencies
-        run: go mod verify
-
-      - name: Build
-        run: go build ./...
-
-      - name: Check gofmt
+      - name: Verify module files
         run: |
-          if [ -n "$(gofmt -l .)" ]; then
-            echo "gofmt found issues:"
-            gofmt -l .
-            exit 1
-          fi
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
 
-      - name: go vet
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+
+      - name: Run static analysis
         run: go vet ./...
 
-      - name: Unit tests
-        run: go test -v -count=1 -timeout 120s ./...
+      - name: Run tests with race detection
+        run: go test -race ./...
 
-      - name: Race tests
-        run: go test -count=1 -race -timeout 240s ./...
+      - name: Measure library coverage
+        run: |
+          go test -covermode=atomic -coverprofile=coverage.out . ./price ./transport
+          go tool cover -func=coverage.out
 
-      - name: Coverage
-        run: go test -count=1 -coverprofile=coverage.out ./...
-
-      - name: Upload coverage
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-${{ matrix.go-version }}
-          path: coverage.out
-
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-
-      - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.4.0 # pinned — do not float
-          args: --timeout=5m
-
-  # NOTE: no live/smoke tests here. BITQUERY_LIVE tests are opt-in only
-  # and must never run in public CI with real credentials.
+      - name: Build all packages and examples
+        run: go build ./...

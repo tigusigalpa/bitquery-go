@@ -35,7 +35,7 @@ var v2Endpoints = map[Region]string{
 
 // HTTPURL resolves the GraphQL HTTPS endpoint for a version/region.
 // An explicit override always wins over the region default.
-func HTTPURL(version ApiVersion, region Region, override string) (string, error) {
+func HTTPURL(version APIVersion, region Region, override string) (string, error) {
 	if strings.TrimSpace(override) != "" {
 		if err := validateHTTPURL(override, "HTTP endpoint"); err != nil {
 			return "", err

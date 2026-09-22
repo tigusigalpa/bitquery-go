@@ -80,4 +80,5 @@ func (l *TokenBucketRateLimiter) perToken() time.Duration {
 // NopRateLimiter never delays.
 type NopRateLimiter struct{}
 
+// Wait immediately succeeds without delaying the caller.
 func (NopRateLimiter) Wait(context.Context) error { return nil }

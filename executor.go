@@ -17,18 +17,18 @@ import (
 // API rather than constructing this directly.
 type Executor struct {
 	cfg        *Config
-	version    ApiVersion
+	version    APIVersion
 	httpClient *http.Client
 }
 
 // NewExecutor builds an executor for an explicit API version.
-func NewExecutor(version ApiVersion, opts ...Option) (*Executor, error) {
+func NewExecutor(version APIVersion, opts ...Option) (*Executor, error) {
 	cfg, err := NewConfig(opts...)
 	if err != nil {
 		return nil, err
 	}
 	if version != V1 && version != V2 {
-		return nil, &Error{Kind: KindConfig, Message: "Executor requires an explicit ApiVersion (V1 or V2)"}
+		return nil, &Error{Kind: KindConfig, Message: "Executor requires an explicit APIVersion (V1 or V2)"}
 	}
 	hc := cfg.HTTPClient
 	if hc == nil {
@@ -43,7 +43,7 @@ func (e *Executor) Endpoint() (string, error) {
 }
 
 // Version returns the executor's API version.
-func (e *Executor) Version() ApiVersion { return e.version }
+func (e *Executor) Version() APIVersion { return e.version }
 
 // Config returns the executor config.
 func (e *Executor) Config() *Config { return e.cfg }

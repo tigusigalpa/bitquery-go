@@ -24,9 +24,16 @@ type SlogAdapter struct {
 	}
 }
 
+// Debug forwards a redacted debug message to the wrapped logger.
 func (a SlogAdapter) Debug(msg string, args ...any) { a.Log.Debug(msg, sanitizeArgs(args)...) }
-func (a SlogAdapter) Info(msg string, args ...any)  { a.Log.Info(msg, sanitizeArgs(args)...) }
-func (a SlogAdapter) Warn(msg string, args ...any)  { a.Log.Warn(msg, sanitizeArgs(args)...) }
+
+// Info forwards a redacted informational message to the wrapped logger.
+func (a SlogAdapter) Info(msg string, args ...any) { a.Log.Info(msg, sanitizeArgs(args)...) }
+
+// Warn forwards a redacted warning message to the wrapped logger.
+func (a SlogAdapter) Warn(msg string, args ...any) { a.Log.Warn(msg, sanitizeArgs(args)...) }
+
+// Error forwards a redacted error message to the wrapped logger.
 func (a SlogAdapter) Error(msg string, args ...any) { a.Log.Error(msg, sanitizeArgs(args)...) }
 
 func sanitizeArgs(args []any) []any {
@@ -47,9 +54,16 @@ func sanitizeArgs(args []any) []any {
 // NopLogger is the default no-op logger.
 type NopLogger struct{}
 
+// Debug discards a debug message.
 func (NopLogger) Debug(string, ...any) {}
-func (NopLogger) Info(string, ...any)  {}
-func (NopLogger) Warn(string, ...any)  {}
+
+// Info discards an informational message.
+func (NopLogger) Info(string, ...any) {}
+
+// Warn discards a warning message.
+func (NopLogger) Warn(string, ...any) {}
+
+// Error discards an error message.
 func (NopLogger) Error(string, ...any) {}
 
 func loggerOrNop(l Logger) Logger {

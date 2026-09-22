@@ -28,6 +28,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `WithDialer`/`WSConn` test seams; race-tested suite (`go test -race`).
 
 ### Changed
+- Public initialism names now follow Go conventions: `APIVersion` and
+  `ParseAPIVersion` replace the unreleased `ApiVersion` and
+  `ParseApiVersion` spellings.
 - Retries now replay only conservative read operations; mutations and
   HTTP subscriptions are never retried by the SDK.
 - Default HTTP transports are owned once per executor rather than

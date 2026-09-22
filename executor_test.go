@@ -24,7 +24,7 @@ func fastPolicy() *RetryPolicy {
 	return p
 }
 
-func newTestExecutor(t *testing.T, version ApiVersion, url string, extra ...Option) *Executor {
+func newTestExecutor(t *testing.T, version APIVersion, url string, extra ...Option) *Executor {
 	t.Helper()
 	opts := append([]Option{
 		WithTokenProvider(NewStaticTokenProvider("TEST_TOKEN")),
@@ -362,7 +362,7 @@ func TestExecuteEmptyQuery(t *testing.T) {
 }
 
 func TestExecuteRequiresVersion(t *testing.T) {
-	_, err := NewExecutor(ApiVersion(9), WithTokenProvider(NewStaticTokenProvider("x")))
+	_, err := NewExecutor(APIVersion(9), WithTokenProvider(NewStaticTokenProvider("x")))
 	if err == nil {
 		t.Fatal("expected version error")
 	}

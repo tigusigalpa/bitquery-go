@@ -21,10 +21,12 @@ type TokenProvider interface {
 // StaticTokenProvider returns a pre-minted access token.
 type StaticTokenProvider struct{ token string }
 
+// NewStaticTokenProvider creates a provider for an already-issued access token.
 func NewStaticTokenProvider(token string) *StaticTokenProvider {
 	return &StaticTokenProvider{token: token}
 }
 
+// Token returns the configured access token or a configuration error when it is empty.
 func (p *StaticTokenProvider) Token(context.Context) (string, error) {
 	if strings.TrimSpace(p.token) == "" {
 		return "", &Error{Kind: KindConfig, Message: "static access token cannot be empty"}
@@ -32,6 +34,7 @@ func (p *StaticTokenProvider) Token(context.Context) (string, error) {
 	return p.token, nil
 }
 
+// Refresh returns the same static token because static tokens cannot be refreshed by the SDK.
 func (p *StaticTokenProvider) Refresh(ctx context.Context) (string, error) {
 	return p.Token(ctx)
 }
@@ -109,6 +112,7 @@ func NewClientCredentialsProvider(clientID, clientSecret string, opts ...ClientC
 
 const oauthExpiryMargin = 60 * time.Second
 
+// Token returns a cached OAuth token or obtains a new one when it has expired.
 func (p *ClientCredentialsProvider) Token(ctx context.Context) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -119,6 +123,7 @@ func (p *ClientCredentialsProvider) Token(ctx context.Context) (string, error) {
 	return p.fetch(ctx)
 }
 
+// Refresh obtains a new OAuth token even when a cached token remains valid.
 func (p *ClientCredentialsProvider) Refresh(ctx context.Context) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

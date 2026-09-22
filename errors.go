@@ -11,15 +11,25 @@ import (
 // Kind classifies SDK errors for errors.Is checks.
 type Kind int
 
+// Error kinds classify failures from the Bitquery SDK.
 const (
+	// KindTransport covers network, response parsing and unexpected HTTP failures.
 	KindTransport Kind = iota + 1
+	// KindAuthentication covers rejected or missing credentials.
 	KindAuthentication
+	// KindAuthorization covers requests that the current token cannot perform.
 	KindAuthorization
+	// KindPlanEntitlement covers requests unavailable to the current plan.
 	KindPlanEntitlement
+	// KindRateLimited covers rate-limit and temporary shared-compute failures.
 	KindRateLimited
+	// KindServer covers HTTP 5xx failures returned by Bitquery.
 	KindServer
+	// KindGraphQL covers GraphQL errors returned in a successful HTTP response.
 	KindGraphQL
+	// KindSubscription covers WebSocket lifecycle failures.
 	KindSubscription
+	// KindConfig covers invalid SDK configuration or caller input.
 	KindConfig
 )
 
@@ -83,6 +93,7 @@ func (e *Error) Unwrap() error {
 	return kindSentinels[e.Kind]
 }
 
+// Is reports whether target is the sentinel associated with e.Kind.
 func (e *Error) Is(target error) bool {
 	return target == kindSentinels[e.Kind]
 }
