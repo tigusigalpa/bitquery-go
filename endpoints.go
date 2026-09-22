@@ -18,7 +18,7 @@ const (
 	V2EndpointUS     = "https://us.streaming.bitquery.io/graphql"
 
 	// OAuthTokenEndpoint issues OAuth2 access tokens (all regions).
-	OAuthTokenEndpoint = "https://oauth2.bitquery.io/oauth2/token"
+	OAuthTokenEndpoint = "https://oauth2.bitquery.io/oauth2/token" // #nosec G101 -- public endpoint, not a credential.
 )
 
 var v1Endpoints = map[Region]string{

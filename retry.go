@@ -2,7 +2,8 @@ package bitquery
 
 import (
 	"context"
-	"math/rand"
+	cryptorand "crypto/rand"
+	"math/big"
 	"net/http"
 	"strconv"
 	"sync"
@@ -26,8 +27,9 @@ type RetryPolicy struct {
 	// Sleep sleeps d or returns early on ctx cancellation. Defaults to a
 	// context-aware real sleep.
 	Sleep func(ctx context.Context, d time.Duration) error
-	// Rand is the jitter source (time-seeded by default).
-	Rand *rand.Rand
+	// Rand is the jitter source. It defaults to a cryptographically secure
+	// source; tests may supply a deterministic source with Int63n.
+	Rand interface{ Int63n(int64) int64 }
 
 	randMu sync.Mutex
 }
@@ -41,8 +43,24 @@ func DefaultRetryPolicy() *RetryPolicy {
 		Jitter:            0.25,
 		RetryableStatuses: []int{http.StatusTooManyRequests, 500, 502, 503, 504},
 		Sleep:             sleepCtx,
-		Rand:              rand.New(rand.NewSource(time.Now().UnixNano())),
+		Rand:              cryptoJitter{},
 	}
+}
+
+// cryptoJitter adapts crypto/rand to the small interface RetryPolicy
+// needs. Returning zero after an OS-randomness failure keeps the delay
+// bounded without falling back to a predictable generator.
+type cryptoJitter struct{}
+
+func (cryptoJitter) Int63n(n int64) int64 {
+	if n <= 1 {
+		return 0
+	}
+	value, err := cryptorand.Int(cryptorand.Reader, big.NewInt(n))
+	if err != nil {
+		return 0
+	}
+	return value.Int64()
 }
 
 // NoRetry returns a policy that never retries.

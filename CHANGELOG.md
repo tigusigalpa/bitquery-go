@@ -43,6 +43,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   endpoint configuration and the subscription worker lifecycle.
 
 ### Fixed
+- Retry jitter now uses `crypto/rand` by default; deterministic random
+  sources remain injectable for tests.
+- The public OAuth token endpoint is explicitly documented as an
+  endpoint rather than a hardcoded credential for security analysis.
 - A zero or negative client-side request limit is now a documented no-op
   rather than a possible wait loop.
 - `Retry-After` HTTP dates now use the injectable clock used by tests.

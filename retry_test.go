@@ -101,3 +101,16 @@ func TestIsRetryable(t *testing.T) {
 		t.Fatal("402 must not be retryable")
 	}
 }
+
+func TestDefaultRetryPolicyAndNoRetry(t *testing.T) {
+	p := DefaultRetryPolicy()
+	if p.MaxAttempts != 4 || p.Sleep == nil || p.Rand == nil {
+		t.Fatalf("unexpected default policy: %+v", p)
+	}
+	if d := p.Delay(1, 0); d < 3750*time.Millisecond || d > 6250*time.Millisecond {
+		t.Fatalf("default jittered delay = %v, want within 25%% of 5s", d)
+	}
+	if noRetry := NoRetry(); noRetry.MaxAttempts != 1 {
+		t.Fatalf("NoRetry MaxAttempts = %d", noRetry.MaxAttempts)
+	}
+}

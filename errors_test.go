@@ -45,3 +45,14 @@ func TestErrorMessageRedacted(t *testing.T) {
 		t.Fatalf("token leaked: %s", err.Error())
 	}
 }
+
+func TestErrorUnwrapsCauseBeforeKindSentinel(t *testing.T) {
+	cause := errors.New("network unavailable")
+	err := Wrap(KindTransport, "request failed", cause)
+	if !errors.Is(err, cause) {
+		t.Fatal("wrapped cause must remain inspectable")
+	}
+	if errors.Unwrap(err) != cause {
+		t.Fatalf("Unwrap() = %v, want cause", errors.Unwrap(err))
+	}
+}
