@@ -48,7 +48,7 @@ jobs:
 
       - name: Measure library coverage
         run: |
-          go test -covermode=atomic -coverprofile=coverage.out . ./price ./transport
+          go test -covermode atomic -coverprofile coverage.out ./...
           go tool cover -func=coverage.out
 
       - name: Build all packages and examples
