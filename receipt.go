@@ -1,6 +1,7 @@
 package bitquery
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -48,6 +49,17 @@ type Receipt struct {
 	operation json.RawMessage
 	raw       json.RawMessage
 }
+
+// ReceiptObserver synchronously receives a captured subscription receipt. It
+// runs on the subscription worker without internal Stream locks, so it may
+// apply backpressure deliberately. Implementations must honour ctx and return
+// promptly; they must not call Stream.Close or Stream.Wait synchronously from
+// the callback, because both wait for that worker to exit.
+//
+// Returning an error terminates the stream without reconnecting and records an
+// observable gap. The terminal typed error retains the triggering Receipt. The
+// callback receives an immutable Receipt and may retain it.
+type ReceiptObserver func(ctx context.Context, receipt Receipt) error
 
 // NewReceipt captures a raw transport observation. operation must be the JSON
 // representation of a GraphQL Operation; raw is the exact HTTP body or

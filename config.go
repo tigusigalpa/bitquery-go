@@ -34,6 +34,16 @@ type Config struct {
 	SubscriptionQueueCapacity int
 	// OverflowPolicy: "drop_oldest" (default) or "fail".
 	OverflowPolicy string
+	// SubscriptionReceiptCapacity bounds in-memory subscription receipts. A
+	// value of zero disables the retained buffer; a ReceiptObserver may still
+	// consume every receipt synchronously.
+	SubscriptionReceiptCapacity int
+	// ReceiptOverflowPolicy controls a full receipt buffer. The safe default is
+	// OverflowFail so receipt loss cannot be silent.
+	ReceiptOverflowPolicy string
+	// ReceiptObserver receives subscription receipts synchronously on the
+	// connection worker and may apply caller-controlled backpressure.
+	ReceiptObserver ReceiptObserver
 	// Dialer overrides the WebSocket dial implementation (tests/custom transport).
 	Dialer Dialer
 }
@@ -44,15 +54,17 @@ type Option func(*Config)
 // NewConfig builds a Config with defaults.
 func NewConfig(opts ...Option) (*Config, error) {
 	c := &Config{
-		Region:                    RegionEurope,
-		TokenEndpoint:             OAuthTokenEndpoint,
-		Timeout:                   30 * time.Second,
-		Retry:                     DefaultRetryPolicy(),
-		UserAgent:                 "bitquery-go/0.1 (+https://github.com/tigusigalpa/bitquery-go)",
-		SubProtocol:               SubProtocolGraphQLTransportWS,
-		SubscriptionMaxReconnects: 8,
-		SubscriptionQueueCapacity: 1000,
-		OverflowPolicy:            OverflowDropOldest,
+		Region:                      RegionEurope,
+		TokenEndpoint:               OAuthTokenEndpoint,
+		Timeout:                     30 * time.Second,
+		Retry:                       DefaultRetryPolicy(),
+		UserAgent:                   "bitquery-go/0.1 (+https://github.com/tigusigalpa/bitquery-go)",
+		SubProtocol:                 SubProtocolGraphQLTransportWS,
+		SubscriptionMaxReconnects:   8,
+		SubscriptionQueueCapacity:   1000,
+		OverflowPolicy:              OverflowDropOldest,
+		SubscriptionReceiptCapacity: 1024,
+		ReceiptOverflowPolicy:       OverflowFail,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -92,6 +104,12 @@ func NewConfig(opts ...Option) (*Config, error) {
 	}
 	if c.OverflowPolicy != OverflowDropOldest && c.OverflowPolicy != OverflowFail {
 		return nil, &Error{Kind: KindConfig, Message: fmt.Sprintf("unknown subscription overflow policy %q", c.OverflowPolicy)}
+	}
+	if c.SubscriptionReceiptCapacity < 0 {
+		return nil, &Error{Kind: KindConfig, Message: "subscription receipt capacity cannot be negative"}
+	}
+	if c.ReceiptOverflowPolicy != OverflowDropOldest && c.ReceiptOverflowPolicy != OverflowFail {
+		return nil, &Error{Kind: KindConfig, Message: fmt.Sprintf("unknown subscription receipt overflow policy %q", c.ReceiptOverflowPolicy)}
 	}
 	if c.SubProtocol != SubProtocolGraphQLWS && c.SubProtocol != SubProtocolGraphQLTransportWS {
 		return nil, &Error{Kind: KindConfig, Message: fmt.Sprintf("unknown GraphQL WebSocket subprotocol %q", c.SubProtocol)}
@@ -180,6 +198,28 @@ func WithSubscriptionQueue(capacity int, policy string) Option {
 			c.OverflowPolicy = policy
 		}
 	}
+}
+
+// WithSubscriptionReceiptBuffer sets bounded in-memory receipt retention for
+// WebSocket streams. Use OverflowFail for completeness-sensitive ingestion;
+// OverflowDropOldest reports a gap and increments DroppedReceipts. Set
+// capacity to zero to retain no receipts in memory, typically with a
+// SubscriptionReceiptObserver that persists or drains them elsewhere.
+func WithSubscriptionReceiptBuffer(capacity int, policy string) Option {
+	return func(c *Config) {
+		c.SubscriptionReceiptCapacity = capacity
+		if policy != "" {
+			c.ReceiptOverflowPolicy = policy
+		}
+	}
+}
+
+// WithSubscriptionReceiptObserver installs a synchronous bounded-observer
+// callback for subscription receipts. It runs on the connection worker and
+// receives the subscription context; returning an error terminates the stream
+// without reconnecting. The callback owns the Receipt it receives.
+func WithSubscriptionReceiptObserver(observer ReceiptObserver) Option {
+	return func(c *Config) { c.ReceiptObserver = observer }
 }
 
 // WithDialer overrides the WebSocket dialer (tests/custom transport).

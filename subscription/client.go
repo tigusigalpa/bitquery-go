@@ -71,6 +71,11 @@ const (
 	GapReconnect GapReason = "reconnect"
 	// GapOverflowFail marks a queue overflow that stopped a fail-closed stream.
 	GapOverflowFail GapReason = "overflow_fail"
+	// GapReceiptOverflow marks bounded receipt retention that discarded or
+	// rejected a receipt.
+	GapReceiptOverflow GapReason = "receipt_overflow"
+	// GapReceiptObserver marks a receipt observer that returned an error.
+	GapReceiptObserver GapReason = "receipt_observer"
 )
 
 // DeliveryGap records a possible discontinuity in a Stream. It is evidence
@@ -95,7 +100,14 @@ type Stream struct {
 	conn bitquery.WSConn
 	err  error
 
-	dropped atomic.Int64
+	dropped        atomic.Int64
+	receiptDropped atomic.Int64
+	gapDropped     atomic.Int64
+
+	receiptCapacity       int
+	receiptOverflowPolicy string
+	receiptObserver       bitquery.ReceiptObserver
+	gapCapacity           int
 
 	receipts        []bitquery.Receipt
 	gaps            []DeliveryGap
@@ -131,17 +143,44 @@ func (s *Stream) Dropped() int64 {
 	return s.dropped.Load()
 }
 
-// Receipts returns immutable snapshots for every observed WebSocket frame,
-// including protocol frames during reconnects. The SDK keeps them in memory
-// only; callers that need a durable audit trail must persist them.
+// DroppedReceipts counts receipts discarded from the bounded retained buffer
+// under OverflowDropOldest. Any non-zero value means Receipts is incomplete;
+// consult Gaps for the retained discontinuity evidence.
+func (s *Stream) DroppedReceipts() int64 {
+	return s.receiptDropped.Load()
+}
+
+// DroppedGaps counts gap records evicted from the bounded gap buffer. A
+// non-zero value means Gaps is incomplete; callers should persist gap evidence
+// outside the SDK when they need a durable audit trail.
+func (s *Stream) DroppedGaps() int64 {
+	return s.gapDropped.Load()
+}
+
+// Receipts returns a copy of the current bounded receipt buffer. It is not an
+// unbounded stream history. Use DrainReceipts in a long-lived consumer or a
+// ReceiptObserver for synchronous caller-controlled backpressure.
 func (s *Stream) Receipts() []bitquery.Receipt {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]bitquery.Receipt(nil), s.receipts...)
 }
 
-// Gaps returns observable reconnect and fail-closed overflow conditions. A
-// reconnect is a possible delivery gap, not an automatic replay guarantee.
+// DrainReceipts returns and clears the current bounded receipt buffer. It is
+// safe to call concurrently with subscription delivery. Receipts accepted
+// after the drain remain available in subsequent calls.
+func (s *Stream) DrainReceipts() []bitquery.Receipt {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	drained := append([]bitquery.Receipt(nil), s.receipts...)
+	clear(s.receipts)
+	s.receipts = s.receipts[:0]
+	return drained
+}
+
+// Gaps returns a copy of the current bounded gap buffer. A reconnect is a
+// possible delivery gap, not an automatic replay guarantee. DroppedGaps
+// reports whether older gap records were evicted.
 func (s *Stream) Gaps() []DeliveryGap {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -162,12 +201,6 @@ func (s *Stream) setErr(err error) {
 	s.mu.Unlock()
 }
 
-func (s *Stream) addReceipt(receipt bitquery.Receipt) {
-	s.mu.Lock()
-	s.receipts = append(s.receipts, receipt)
-	s.mu.Unlock()
-}
-
 func (s *Stream) nextDelivery(epoch uint64, receivedAt time.Time) Delivery {
 	s.mu.Lock()
 	s.receiveSequence++
@@ -182,8 +215,66 @@ func (s *Stream) nextDelivery(epoch uint64, receivedAt time.Time) Delivery {
 
 func (s *Stream) addGap(gap DeliveryGap) {
 	s.mu.Lock()
+	if len(s.gaps) >= s.gapCapacity {
+		copy(s.gaps, s.gaps[1:])
+		s.gaps[len(s.gaps)-1] = gap
+		s.gapDropped.Add(1)
+		s.mu.Unlock()
+		return
+	}
 	s.gaps = append(s.gaps, gap)
 	s.mu.Unlock()
+}
+
+func (s *Stream) observeReceipt(ctx context.Context, receipt bitquery.Receipt, epoch, sequence uint64) error {
+	if observer := s.receiptObserver; observer != nil {
+		if err := observer(ctx, receipt); err != nil {
+			s.addGap(DeliveryGap{
+				Reason:          GapReceiptObserver,
+				ConnectionEpoch: epoch,
+				ReceiveSequence: sequence,
+				ObservedAt:      time.Now().UTC(),
+			})
+			apiErr := bitquery.Wrap(bitquery.KindSubscription, "subscription receipt observer: "+err.Error(), err)
+			apiErr.Receipts = []bitquery.Receipt{receipt}
+			return fatal(apiErr)
+		}
+	}
+
+	s.mu.Lock()
+	if s.receiptCapacity == 0 {
+		s.mu.Unlock()
+		return nil
+	}
+	if len(s.receipts) < s.receiptCapacity {
+		s.receipts = append(s.receipts, receipt)
+		s.mu.Unlock()
+		return nil
+	}
+	policy := s.receiptOverflowPolicy
+	if policy == bitquery.OverflowDropOldest {
+		copy(s.receipts, s.receipts[1:])
+		s.receipts[len(s.receipts)-1] = receipt
+		s.receiptDropped.Add(1)
+		s.mu.Unlock()
+		s.addGap(DeliveryGap{
+			Reason:          GapReceiptOverflow,
+			ConnectionEpoch: epoch,
+			ReceiveSequence: sequence,
+			ObservedAt:      time.Now().UTC(),
+		})
+		return nil
+	}
+	s.mu.Unlock()
+	s.addGap(DeliveryGap{
+		Reason:          GapReceiptOverflow,
+		ConnectionEpoch: epoch,
+		ReceiveSequence: sequence,
+		ObservedAt:      time.Now().UTC(),
+	})
+	apiErr := bitquery.Wrap(bitquery.KindSubscription, "subscription receipt buffer overflow (bounded buffer full)", nil)
+	apiErr.Receipts = []bitquery.Receipt{receipt}
+	return fatal(apiErr)
 }
 
 // Client is the opt-in V2 WebSocket subscription client.
@@ -241,7 +332,15 @@ func (c *Client) Subscribe(ctx context.Context, op bitquery.Operation) (*Stream,
 
 	ctx, cancel := context.WithCancel(ctx)
 	events := make(chan Event, max(1, c.cfg.SubscriptionQueueCapacity))
-	stream := &Stream{Events: events, cancel: cancel, done: make(chan struct{})}
+	stream := &Stream{
+		Events:                events,
+		cancel:                cancel,
+		done:                  make(chan struct{}),
+		receiptCapacity:       c.cfg.SubscriptionReceiptCapacity,
+		receiptOverflowPolicy: c.cfg.ReceiptOverflowPolicy,
+		receiptObserver:       c.cfg.ReceiptObserver,
+		gapCapacity:           max(1, c.cfg.SubscriptionReceiptCapacity),
+	}
 
 	go c.run(ctx, wsURL, operationJSON, stream, events)
 
@@ -361,7 +460,7 @@ func (c *Client) run(ctx context.Context, wsURL string, operationJSON json.RawMe
 // Returns (finished, acknowledged, error).
 func (c *Client) serve(ctx context.Context, conn bitquery.WSConn, operationJSON json.RawMessage, wsURL string, epoch uint64, stream *Stream, events chan Event) (bool, bool, error) {
 	init := map[string]any{"type": "connection_init", "payload": map[string]any{}}
-	if err := writeJSON(ctx, conn, init, stream, operationJSON, wsURL); err != nil {
+	if err := writeJSON(ctx, conn, init, stream, operationJSON, wsURL, epoch); err != nil {
 		return false, false, err
 	}
 
@@ -383,7 +482,9 @@ func (c *Client) serve(ctx context.Context, conn bitquery.WSConn, operationJSON 
 			0,
 			receivedAt,
 		)
-		stream.addReceipt(receipt)
+		if err := stream.observeReceipt(ctx, receipt, epoch, delivery.ReceiveSequence); err != nil {
+			return false, acknowledged, err
+		}
 
 		var msg struct {
 			Type    string          `json:"type"`
@@ -408,12 +509,12 @@ func (c *Client) serve(ctx context.Context, conn bitquery.WSConn, operationJSON 
 				Type:    c.cfg.SubProtocol.SubscribeType(),
 				Payload: operationJSON,
 			}
-			if err := writeJSON(ctx, conn, sub, stream, operationJSON, wsURL); err != nil {
+			if err := writeJSON(ctx, conn, sub, stream, operationJSON, wsURL, epoch); err != nil {
 				return false, acknowledged, err
 			}
 
 		case "ping":
-			if err := writeJSON(ctx, conn, map[string]any{"type": "pong"}, stream, operationJSON, wsURL); err != nil {
+			if err := writeJSON(ctx, conn, map[string]any{"type": "pong"}, stream, operationJSON, wsURL, epoch); err != nil {
 				return false, acknowledged, err
 			}
 
@@ -505,7 +606,7 @@ func fatal(err error) error {
 	return fmt.Errorf("%w: %w", errFatal, err)
 }
 
-func writeJSON(ctx context.Context, conn bitquery.WSConn, v any, stream *Stream, operationJSON json.RawMessage, wsURL string) error {
+func writeJSON(ctx context.Context, conn bitquery.WSConn, v any, stream *Stream, operationJSON json.RawMessage, wsURL string, epoch uint64) error {
 	data, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -513,7 +614,7 @@ func writeJSON(ctx context.Context, conn bitquery.WSConn, v any, stream *Stream,
 	if err := conn.Write(ctx, bitquery.WSMessageText, data); err != nil {
 		return err
 	}
-	stream.addReceipt(bitquery.NewReceipt(
+	receipt := bitquery.NewReceipt(
 		bitquery.ReceiptSourceWebSocket,
 		bitquery.ReceiptSent,
 		wsURL,
@@ -521,6 +622,6 @@ func writeJSON(ctx context.Context, conn bitquery.WSConn, v any, stream *Stream,
 		data,
 		0,
 		time.Now(),
-	))
-	return nil
+	)
+	return stream.observeReceipt(ctx, receipt, epoch, 0)
 }

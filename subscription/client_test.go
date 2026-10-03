@@ -393,6 +393,7 @@ func TestCancelClosesSocketAndStopsWorker(t *testing.T) {
 func TestSocketDropReconnects(t *testing.T) {
 	d := &dialRec{}
 	var first atomic.Bool
+	var observed atomic.Int64
 	d.serve = func(c *fakeConn) {
 		c.waitWrite(1)
 		c.push(map[string]any{"type": "connection_ack"})
@@ -407,7 +408,13 @@ func TestSocketDropReconnects(t *testing.T) {
 		c.push(map[string]any{"type": "next", "id": "1", "payload": map[string]any{"data": 2}})
 		c.push(map[string]any{"type": "complete", "id": "1"})
 	}
-	c := newTestClient(t, d)
+	c := newTestClient(t, d,
+		bitquery.WithSubscriptionReceiptBuffer(0, bitquery.OverflowFail),
+		bitquery.WithSubscriptionReceiptObserver(func(context.Context, bitquery.Receipt) error {
+			observed.Add(1)
+			return nil
+		}),
+	)
 
 	stream, err := c.Subscribe(context.Background(), bitquery.Operation{Query: "subscription { x }"})
 	if err != nil {
@@ -436,6 +443,12 @@ func TestSocketDropReconnects(t *testing.T) {
 	gaps := stream.Gaps()
 	if len(gaps) != 1 || gaps[0].Reason != GapReconnect || gaps[0].ConnectionEpoch != 2 {
 		t.Fatalf("gaps = %+v", gaps)
+	}
+	if got := observed.Load(); got != 9 { // init/ack/subscribe/data on each connection, then complete
+		t.Fatalf("observer receipts across reconnect = %d, want 9", got)
+	}
+	if got := len(stream.Receipts()); got != 0 {
+		t.Fatalf("retained receipts with zero-capacity observer = %d, want 0", got)
 	}
 }
 
@@ -562,6 +575,195 @@ func TestOverflowPolicyFail(t *testing.T) {
 	gaps := stream.Gaps()
 	if len(gaps) != 1 || gaps[0].Reason != GapOverflowFail || gaps[0].ReceiveSequence == 0 {
 		t.Fatalf("overflow gap = %+v", gaps)
+	}
+}
+
+func TestReceiptBufferFailsClosedAtCapacity(t *testing.T) {
+	d := &dialRec{}
+	d.serve = func(c *fakeConn) {
+		c.waitWrite(1) // connection_init occupies the first receipt slot
+		c.push(map[string]any{"type": "connection_ack"})
+	}
+	c := newTestClient(t, d, bitquery.WithSubscriptionReceiptBuffer(2, bitquery.OverflowFail))
+
+	stream, err := c.Subscribe(context.Background(), bitquery.Operation{Query: "subscription { x }"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream.Wait()
+	err = stream.Err()
+	if err == nil || !strings.Contains(err.Error(), "receipt buffer overflow") {
+		t.Fatalf("expected receipt-buffer error, got %v", err)
+	}
+	var apiErr *bitquery.Error
+	if !errors.As(err, &apiErr) || len(apiErr.Receipts) != 1 || frameType(apiErr.Receipts[0].Raw()) != "subscribe" {
+		t.Fatalf("overflow evidence = %#v", apiErr)
+	}
+	if got := len(stream.Receipts()); got != 2 {
+		t.Fatalf("retained receipts = %d, want exactly capacity 2", got)
+	}
+	gaps := stream.Gaps()
+	if len(gaps) != 1 || gaps[0].Reason != GapReceiptOverflow {
+		t.Fatalf("receipt overflow gap = %+v", gaps)
+	}
+}
+
+func TestReceiptBufferDropOldestIsBoundedAndObservable(t *testing.T) {
+	d := &dialRec{}
+	d.serve = func(c *fakeConn) {
+		serveHandshake(c, func() {
+			for i := 0; i < 16; i++ {
+				c.push(map[string]any{"type": "next", "id": "1", "payload": map[string]any{"i": i}})
+			}
+			c.push(map[string]any{"type": "complete", "id": "1"})
+		})
+	}
+	c := newTestClient(t, d, bitquery.WithSubscriptionReceiptBuffer(3, bitquery.OverflowDropOldest))
+
+	stream, err := c.Subscribe(context.Background(), bitquery.Operation{Query: "subscription { x }"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream.Wait()
+	if err := stream.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if got := len(stream.Receipts()); got > 3 {
+		t.Fatalf("retained receipts = %d, capacity = 3", got)
+	}
+	if stream.DroppedReceipts() == 0 {
+		t.Fatal("receipt overflow must be observable through DroppedReceipts")
+	}
+	if len(stream.Gaps()) > 3 || stream.DroppedGaps() == 0 {
+		t.Fatalf("gap retention must be bounded and report evictions: gaps=%d dropped=%d", len(stream.Gaps()), stream.DroppedGaps())
+	}
+}
+
+func TestDrainReceiptsClearsBoundedBuffer(t *testing.T) {
+	d := &dialRec{}
+	d.serve = func(c *fakeConn) {
+		serveHandshake(c, func() {
+			c.push(map[string]any{"type": "complete", "id": "1"})
+		})
+	}
+	c := newTestClient(t, d, bitquery.WithSubscriptionReceiptBuffer(8, bitquery.OverflowFail))
+
+	stream, err := c.Subscribe(context.Background(), bitquery.Operation{Query: "subscription { x }"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream.Wait()
+	if got := len(stream.DrainReceipts()); got != 4 { // init, ack, subscribe, complete
+		t.Fatalf("drained receipts = %d, want 4", got)
+	}
+	if got := len(stream.Receipts()); got != 0 {
+		t.Fatalf("receipts after drain = %d", got)
+	}
+}
+
+func TestReceiptObserverCanReplaceInMemoryRetention(t *testing.T) {
+	d := &dialRec{}
+	d.serve = func(c *fakeConn) {
+		serveHandshake(c, func() {
+			c.push(map[string]any{"type": "complete", "id": "1"})
+		})
+	}
+	var observed []bitquery.Receipt
+	var mu sync.Mutex
+	observer := func(_ context.Context, receipt bitquery.Receipt) error {
+		mu.Lock()
+		observed = append(observed, receipt)
+		mu.Unlock()
+		return nil
+	}
+	c := newTestClient(t, d,
+		bitquery.WithSubscriptionReceiptBuffer(0, bitquery.OverflowFail),
+		bitquery.WithSubscriptionReceiptObserver(observer),
+	)
+
+	stream, err := c.Subscribe(context.Background(), bitquery.Operation{Query: "subscription { x }"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream.Wait()
+	mu.Lock()
+	count := len(observed)
+	mu.Unlock()
+	if count != 4 || len(stream.Receipts()) != 0 {
+		t.Fatalf("observed=%d retained=%d, want 4/0", count, len(stream.Receipts()))
+	}
+}
+
+func TestReceiptObserverCancellationUnblocksClose(t *testing.T) {
+	d := &dialRec{}
+	entered := make(chan struct{})
+	observer := func(ctx context.Context, _ bitquery.Receipt) error {
+		close(entered)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	c := newTestClient(t, d,
+		bitquery.WithSubscriptionReceiptBuffer(0, bitquery.OverflowFail),
+		bitquery.WithSubscriptionReceiptObserver(observer),
+	)
+
+	stream, err := c.Subscribe(context.Background(), bitquery.Operation{Query: "subscription { x }"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("receipt observer was not called")
+	}
+	closed := make(chan error, 1)
+	go func() { closed <- stream.Close() }()
+	select {
+	case err := <-closed:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Close did not cancel the blocking receipt observer")
+	}
+}
+
+func TestReceiptObserverErrorIsTerminal(t *testing.T) {
+	d := &dialRec{}
+	observer := func(context.Context, bitquery.Receipt) error { return errors.New("archive unavailable") }
+	c := newTestClient(t, d,
+		bitquery.WithSubscriptionReceiptBuffer(0, bitquery.OverflowFail),
+		bitquery.WithSubscriptionReceiptObserver(observer),
+	)
+
+	stream, err := c.Subscribe(context.Background(), bitquery.Operation{Query: "subscription { x }"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream.Wait()
+	err = stream.Err()
+	if err == nil || !strings.Contains(err.Error(), "receipt observer") {
+		t.Fatalf("expected terminal observer error, got %v", err)
+	}
+	var apiErr *bitquery.Error
+	if !errors.As(err, &apiErr) || len(apiErr.Receipts) != 1 || frameType(apiErr.Receipts[0].Raw()) != "connection_init" {
+		t.Fatalf("observer failure evidence = %#v", apiErr)
+	}
+	if d.count() != 1 {
+		t.Fatalf("observer failure must not reconnect; dials=%d", d.count())
+	}
+	gaps := stream.Gaps()
+	if len(gaps) != 1 || gaps[0].Reason != GapReceiptObserver {
+		t.Fatalf("observer gap = %+v", gaps)
+	}
+}
+
+func TestGapBufferIsBounded(t *testing.T) {
+	stream := &Stream{gapCapacity: 1}
+	stream.addGap(DeliveryGap{Reason: GapReconnect})
+	stream.addGap(DeliveryGap{Reason: GapOverflowFail})
+	if gaps := stream.Gaps(); len(gaps) != 1 || gaps[0].Reason != GapOverflowFail || stream.DroppedGaps() != 1 {
+		t.Fatalf("bounded gaps = %+v, dropped=%d", gaps, stream.DroppedGaps())
 	}
 }
 

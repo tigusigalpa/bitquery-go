@@ -38,20 +38,40 @@ bitquery.WithSubscriptionQueue(500, bitquery.OverflowDropOldest)
 - `drop_oldest` evicts the oldest buffered event and increments `Stream.Dropped()`.
 - `fail` stops the stream with a typed `KindSubscription` error instead of losing an event. It also records a `GapOverflowFail` entry in `Stream.Gaps()`; persist that evidence in the caller's ingestion layer if completeness matters.
 
+`drop_oldest` is appropriate only when loss is acceptable. For
+completeness-sensitive ingestion, choose `OverflowFail`; a dropped-event
+counter cannot establish coverage or reconstruct a missing delivery.
+
 Always stop the worker with a cancellable context and call `Stream.Close()` on early return. Bitquery does not end a stream through a GraphQL close message; the socket must be closed.
 
 ## Receipts and delivery evidence
 
-`Stream.Receipts()` returns in-memory, immutable snapshots of inbound and
-outbound WebSocket frames. Each snapshot has a redacted target, capture time,
-source and direction, operation hash, and exact raw operation/frame bytes.
-`Event.Receipt` is the matching inbound-frame receipt for delivered events.
+`Stream.Receipts()` returns a bounded in-memory buffer of immutable inbound
+and outbound WebSocket frame snapshots. The default holds 1,024 entries and
+uses `OverflowFail`: a full buffer terminates the stream and records
+`GapReceiptOverflow` rather than silently losing evidence. Configure the buffer
+with `WithSubscriptionReceiptBuffer`, or call `DrainReceipts()` regularly to
+transfer ownership and release retained memory. The typed terminal error keeps
+the raw receipt that triggered fail-closed admission, even though it could not
+enter the full retained buffer.
+
+For continuous ingestion, `WithSubscriptionReceiptObserver` invokes a callback
+synchronously on the connection worker before it retains a frame. The callback
+is the explicit backpressure boundary: it owns the immutable `Receipt`, must
+honour the provided context, return promptly, and must not call `Close` or
+`Wait` synchronously. Its error is terminal, records `GapReceiptObserver`, and
+retains the triggering receipt on the typed error.
+Set receipt-buffer capacity to zero when the observer is the only retention
+path. `Event.Receipt` is the matching inbound-frame receipt for delivered
+events.
 
 `Event.Delivery` has a stream-wide receive sequence and connection epoch. The
 first data event after a reconnect is marked `ReconnectGap: true`, and
 `Stream.Gaps()` records a `GapReconnect` condition. These are observable signs
 that delivery may be discontinuous. They are not proof of loss, do not replay
 anything, and do not provide a completeness guarantee or durable persistence.
+`DroppedReceipts()` and `DroppedGaps()` report whether explicitly configured
+`drop_oldest` retention has evicted receipts or older gap records.
 
 ## Recovery checklist
 

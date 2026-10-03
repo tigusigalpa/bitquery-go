@@ -253,10 +253,33 @@ Both `graphql-transport-ws` and `graphql-ws` are supported. The stream handles `
 `Event.Delivery` records its connection epoch, receive sequence and receive
 time. The first data event after a reconnect has `ReconnectGap: true`, which
 means a gap is possible — it does not mean the SDK replayed or recovered one.
-`Stream.Receipts()` exposes raw inbound and outbound protocol frames, while
-`Stream.Gaps()` records reconnects and fail-closed queue overflows for
-caller-owned ingestion. See [the lifecycle guide](docs/websocket-lifecycle.md)
-for the state machine and recovery checklist.
+
+`Stream.Receipts()` is a bounded in-memory observer buffer, not an unbounded
+history. Its default capacity is 1,024 and its default overflow policy is
+`fail`, so raw evidence cannot be discarded silently. Long-lived consumers
+should either periodically call `DrainReceipts()` or install a synchronous
+observer with `WithSubscriptionReceiptObserver`. The callback runs on the
+connection worker, must honour its context and return quickly, and must not
+call `Stream.Close` or `Stream.Wait` synchronously.
+
+```go
+client, err := subscription.New(provider,
+    bitquery.WithSubscriptionQueue(500, bitquery.OverflowFail),
+    bitquery.WithSubscriptionReceiptBuffer(0, bitquery.OverflowFail),
+    bitquery.WithSubscriptionReceiptObserver(func(ctx context.Context, receipt bitquery.Receipt) error {
+        // Persist or hand off receipt here. Returning an error stops the stream.
+        return storeReceipt(ctx, receipt)
+    }),
+)
+```
+
+With a zero receipt-buffer capacity, the observer receives every frame without
+retaining a second in-memory copy. `Stream.Gaps()` reports reconnects, event
+queue failures and receipt-observer failures; `DroppedReceipts()` and
+`DroppedGaps()` make `drop_oldest` retention loss explicit. None of these
+signals is automatic gap recovery or a completeness guarantee. See [the
+lifecycle guide](docs/websocket-lifecycle.md) for the state machine and
+recovery checklist.
 
 ## Errors you can act on
 

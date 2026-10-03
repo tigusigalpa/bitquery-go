@@ -46,10 +46,11 @@ bitquery-go
    `DecodeData` uses `json.Number`. No float64 coercion anywhere.
 6. **Race-safe.** `Stream` state is mutex/atomic-guarded; retry jitter
    is synchronized; `go test -race` is part of the required CI suite.
-7. **Raw evidence is preserved.** HTTP retries and WebSocket protocol frames
-   produce in-memory `Receipt` snapshots with a redacted target, capture time,
-   exact operation/frame bytes and a SHA-256 operation hash. The SDK never
-   persists them or infers completeness from reconnects.
+7. **Raw evidence is bounded.** HTTP retries produce `Receipt` snapshots;
+   WebSocket frames enter a bounded receipt buffer or a synchronous observer
+   callback. Receipts have a redacted target, capture time, exact
+   operation/frame bytes and a SHA-256 operation hash. The SDK never persists
+   them or infers completeness from reconnects.
 
 ## Subscription lifecycle
 
@@ -75,6 +76,9 @@ dial wss://…/graphql?token=…   (token in URL only — per Bitquery docs)
   rejected handshake is pointless.
 - `Stream.Gaps()` records reconnects and `OverflowFail` queue termination;
   it surfaces possible discontinuity but does not recover missed events.
+- WebSocket receipt retention defaults to a 1,024-frame `OverflowFail` buffer.
+  `DrainReceipts()` provides transfer-and-clear semantics; an optional
+  `ReceiptObserver` provides synchronous caller-owned backpressure.
 
 ## Testability seams
 

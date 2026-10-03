@@ -14,6 +14,7 @@ func TestNewConfigAppliesOptions(t *testing.T) {
 	rateLimiter := NewRateLimiter(60)
 	logger := NopLogger{}
 	dialer := func(context.Context, string, []string) (WSConn, error) { return nil, nil }
+	receiptObserver := func(context.Context, Receipt) error { return nil }
 
 	config, err := NewConfig(
 		WithRegion(RegionAsia),
@@ -31,6 +32,8 @@ func TestNewConfigAppliesOptions(t *testing.T) {
 		WithSubProtocol(SubProtocolGraphQLWS),
 		WithSubscriptionReconnect(3),
 		WithSubscriptionQueue(7, OverflowFail),
+		WithSubscriptionReceiptBuffer(9, OverflowDropOldest),
+		WithSubscriptionReceiptObserver(receiptObserver),
 		WithDialer(dialer),
 	)
 	if err != nil {
@@ -52,6 +55,9 @@ func TestNewConfigAppliesOptions(t *testing.T) {
 	if config.SubscriptionMaxReconnects != 3 || config.SubscriptionQueueCapacity != 7 || config.OverflowPolicy != OverflowFail || config.Dialer == nil {
 		t.Fatalf("subscription configuration = %+v", config)
 	}
+	if config.SubscriptionReceiptCapacity != 9 || config.ReceiptOverflowPolicy != OverflowDropOldest || config.ReceiptObserver == nil {
+		t.Fatalf("receipt configuration = %+v", config)
+	}
 }
 
 func TestNewConfigRejectsInvalidValues(t *testing.T) {
@@ -71,6 +77,8 @@ func TestNewConfigRejectsInvalidValues(t *testing.T) {
 		{name: "negative reconnects", opts: []Option{provider, WithSubscriptionReconnect(-1)}},
 		{name: "negative queue", opts: []Option{provider, WithSubscriptionQueue(-1, OverflowDropOldest)}},
 		{name: "unknown overflow policy", opts: []Option{provider, WithSubscriptionQueue(1, "discard")}},
+		{name: "negative receipt buffer", opts: []Option{provider, WithSubscriptionReceiptBuffer(-1, OverflowFail)}},
+		{name: "unknown receipt overflow policy", opts: []Option{provider, WithSubscriptionReceiptBuffer(1, "discard")}},
 		{name: "unknown subprotocol", opts: []Option{provider, WithSubProtocol("not-graphql")}},
 	}
 
