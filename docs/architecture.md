@@ -3,7 +3,8 @@
 ```
 bitquery-go
 ├── (root)            shared contract — no version leakage
-│   ├── types.go      ApiVersion, Region, Network, Operation, Response, GraphQLError
+│   ├── types.go      APIVersion, Region, Network, Operation, Response, GraphQLError
+│   ├── receipt.go    immutable HTTP/WS raw receipts and GraphQL Optional values
 │   ├── endpoints.go  region/version → HTTPS/WSS resolution (override wins)
 │   ├── config.go     Config + functional options (region, endpoints, HTTP client,
 │   │                 retry, rate limiter, logger, strict, subscription tuning)
@@ -21,7 +22,8 @@ bitquery-go
 │   └── queries.go    typed V1 helper builders
 ├── v2/               V2 client — HTTPS only, explicit version
 │   ├── client.go     v2.Client
-│   └── queries.go    typed V2 helper builders (EVM, Solana, …)
+│   ├── queries.go    typed V2 helper builders (EVM, Solana, …)
+│   └── projections.go pinned EVM query projections with explicit source choices
 └── subscription/     V2 WebSocket client — OPT-IN, separate type
     ├── conn.go       coder/websocket adapter (production dialer)
     └── client.go     handshake → frames → bounded queue → Events chan
@@ -44,6 +46,10 @@ bitquery-go
    `DecodeData` uses `json.Number`. No float64 coercion anywhere.
 6. **Race-safe.** `Stream` state is mutex/atomic-guarded; retry jitter
    is synchronized; `go test -race` is part of the required CI suite.
+7. **Raw evidence is preserved.** HTTP retries and WebSocket protocol frames
+   produce in-memory `Receipt` snapshots with a redacted target, capture time,
+   exact operation/frame bytes and a SHA-256 operation hash. The SDK never
+   persists them or infers completeness from reconnects.
 
 ## Subscription lifecycle
 
@@ -67,6 +73,8 @@ dial wss://…/graphql?token=…   (token in URL only — per Bitquery docs)
   the stream — never reconnects).
 - `connection_error` frames are treated as terminal — retrying a
   rejected handshake is pointless.
+- `Stream.Gaps()` records reconnects and `OverflowFail` queue termination;
+  it surfaces possible discontinuity but does not recover missed events.
 
 ## Testability seams
 

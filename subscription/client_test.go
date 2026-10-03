@@ -1,6 +1,7 @@
 package subscription
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -230,7 +231,8 @@ func TestLifecycleTransportWS(t *testing.T) {
 	}
 	c := newTestClient(t, d)
 
-	stream, err := c.Subscribe(context.Background(), bitquery.Operation{Query: "subscription { x }"})
+	op := bitquery.Operation{Query: "subscription { x }"}
+	stream, err := c.Subscribe(context.Background(), op)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -250,6 +252,37 @@ func TestLifecycleTransportWS(t *testing.T) {
 	}
 	if err := stream.Err(); err != nil {
 		t.Fatalf("Err() = %v", err)
+	}
+	receipts := stream.Receipts()
+	if len(receipts) != 6 { // init, ack, subscribe, two data frames, complete
+		t.Fatalf("receipts = %d, want 6", len(receipts))
+	}
+	wantOperation, err := json.Marshal(op)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sent, received int
+	for _, receipt := range receipts {
+		if receipt.Source != bitquery.ReceiptSourceWebSocket || strings.Contains(receipt.Target, "TEST_TOKEN") {
+			t.Fatalf("unsafe or invalid receipt metadata: %+v", receipt)
+		}
+		if got := receipt.Operation(); !bytes.Equal(got, wantOperation) {
+			t.Fatalf("receipt operation = %s, want %s", got, wantOperation)
+		}
+		switch receipt.Direction {
+		case bitquery.ReceiptSent:
+			sent++
+		case bitquery.ReceiptReceived:
+			received++
+		}
+	}
+	if sent != 2 || received != 4 {
+		t.Fatalf("sent=%d received=%d, want 2/4", sent, received)
+	}
+	for _, event := range events {
+		if event.Type == EventData && (!bytes.Equal(event.Receipt.Raw(), event.Raw) || event.Delivery.ConnectionEpoch != 1 || event.Delivery.ReceiveSequence == 0) {
+			t.Fatalf("data receipt/delivery = %+v", event)
+		}
 	}
 
 	// Handshake frames: init then subscribe.
@@ -385,14 +418,24 @@ func TestSocketDropReconnects(t *testing.T) {
 	if d.count() != 2 {
 		t.Fatalf("dials = %d, want 2 (reconnect)", d.count())
 	}
-	var data int
+	var data []Event
 	for _, ev := range events {
 		if ev.Type == EventData {
-			data++
+			data = append(data, ev)
 		}
 	}
-	if data != 2 {
-		t.Fatalf("data events = %d, want 2 (one per connection)", data)
+	if len(data) != 2 {
+		t.Fatalf("data events = %d, want 2 (one per connection)", len(data))
+	}
+	if data[0].Delivery.ConnectionEpoch != 1 || data[0].Delivery.ReconnectGap {
+		t.Fatalf("first delivery = %+v", data[0].Delivery)
+	}
+	if data[1].Delivery.ConnectionEpoch != 2 || !data[1].Delivery.ReconnectGap || data[1].Delivery.ReceiveSequence <= data[0].Delivery.ReceiveSequence {
+		t.Fatalf("reconnected delivery = %+v", data[1].Delivery)
+	}
+	gaps := stream.Gaps()
+	if len(gaps) != 1 || gaps[0].Reason != GapReconnect || gaps[0].ConnectionEpoch != 2 {
+		t.Fatalf("gaps = %+v", gaps)
 	}
 }
 
@@ -515,6 +558,10 @@ func TestOverflowPolicyFail(t *testing.T) {
 	err = stream.Err()
 	if err == nil || !strings.Contains(err.Error(), "overflow") {
 		t.Fatalf("expected overflow error, got %v", err)
+	}
+	gaps := stream.Gaps()
+	if len(gaps) != 1 || gaps[0].Reason != GapOverflowFail || gaps[0].ReceiveSequence == 0 {
+		t.Fatalf("overflow gap = %+v", gaps)
 	}
 }
 

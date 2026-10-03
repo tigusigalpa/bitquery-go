@@ -3,6 +3,21 @@
 All notable changes to `bitquery-go` are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+- Optional pinned V2 EVM query projections for BQ1 transactions, BQ2 DEX
+  trades, BQ3 balances/holders/transaction balances, and BQ4 decoded events.
+  Their `EVMSource` preserves explicit dataset and block-selection choices,
+  including the distinction between absent and `null` GraphQL variables.
+- Raw `Receipt` snapshots for every HTTP response (including retries) and all
+  inbound/outbound subscription protocol frames. Receipts preserve exact
+  operation/frame bytes, a SHA-256 operation hash, capture time and redacted
+  provenance target without adding persistence to the SDK.
+- Subscription delivery metadata (`Event.Delivery`) and observable
+  `Stream.Gaps()` entries for reconnects and fail-closed queue overflow. These
+  report a possible discontinuity and never promise automatic replay.
+
 ## [0.1.0] — Unreleased
 
 ### Added

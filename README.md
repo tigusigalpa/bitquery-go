@@ -88,6 +88,35 @@ There are deliberately thin helpers for a few documented common cases; they stil
 resp, err := client.Execute(ctx, v2.EVMDexTrades(bitquery.NetworkBSC, 20, false))
 ```
 
+### Pinned EVM projections are explicit about source choices
+
+For audit-oriented integrations, optional helpers build narrow BQ1–BQ4 EVM
+projections for transactions, DEX trades, balances, holders, transaction
+balances, and decoded events. They remain plain `Operation` values; they do
+not provide a universal response model or make a network request.
+
+`EVMSource` deliberately makes dataset and block-branch selection caller
+owned. Its optional fields distinguish an omitted GraphQL variable from an
+explicit `null`; neither choice is silently replaced with an SDK default.
+
+```go
+source := v2.EVMSource{
+    Network: bitquery.NetworkEthereum,
+    Dataset: bitquery.Present("archive"),
+    // SelectBlocks is omitted here. Use bitquery.Null[string]() only when
+    // the selected cube intentionally requires an explicit GraphQL null.
+}
+op := v2.EVMTransactionByHash(v2.EVMTransactionByHashRequest{
+    Source: source,
+    Hash:   "0x…",
+})
+resp, err := client.Execute(ctx, op)
+```
+
+Use a raw `Operation` for any other cube, filter, status, trigger, cursor, or
+coverage decision. Dataset availability and ordering are provider properties,
+not guarantees made by these helpers.
+
 ### V2 Solana: use the Solana cube
 
 ```go
@@ -139,6 +168,13 @@ if err := resp.DecodeData(&data); err != nil { return err }
 ```
 
 The default is tolerant: GraphQL `errors[]` live on `Response`. Use `ExecuteStrict` (or `bitquery.WithStrict()`) if your application wants a `KindGraphQL` error instead. Even then, the error retains the complete response so partial data is not discarded.
+
+Every HTTP response observed during an execution, including retry attempts, is
+available through `Response.Receipts` (and through `Error.Receipts` for an HTTP
+failure). A receipt holds a redacted target, capture time, response status,
+operation SHA-256, and defensive copies of the exact serialized operation and
+raw body. The SDK keeps receipts only in memory; persist them yourself when
+you need durable lineage.
 
 ## Regions and endpoint overrides
 
@@ -212,7 +248,15 @@ for event := range stream.Events {
 if err := stream.Err(); err != nil { return err }
 ```
 
-Both `graphql-transport-ws` and `graphql-ws` are supported. The stream handles `connection_init`/acknowledgement, `next`/`data`, `ping`/`pong` and `ka`, bounded reconnects, and clean shutdown. Its bounded event queue protects memory: `drop_oldest` keeps the newest events and reports the count via `Dropped()`; `fail` stops the stream rather than losing an event silently. See [the lifecycle guide](docs/websocket-lifecycle.md) for the state machine and recovery checklist.
+Both `graphql-transport-ws` and `graphql-ws` are supported. The stream handles `connection_init`/acknowledgement, `next`/`data`, `ping`/`pong` and `ka`, bounded reconnects, and clean shutdown. Its bounded event queue protects memory: `drop_oldest` keeps the newest events and reports the count via `Dropped()`; `fail` stops the stream rather than losing an event silently.
+
+`Event.Delivery` records its connection epoch, receive sequence and receive
+time. The first data event after a reconnect has `ReconnectGap: true`, which
+means a gap is possible — it does not mean the SDK replayed or recovered one.
+`Stream.Receipts()` exposes raw inbound and outbound protocol frames, while
+`Stream.Gaps()` records reconnects and fail-closed queue overflows for
+caller-owned ingestion. See [the lifecycle guide](docs/websocket-lifecycle.md)
+for the state machine and recovery checklist.
 
 ## Errors you can act on
 

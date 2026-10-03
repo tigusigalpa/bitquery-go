@@ -73,6 +73,9 @@ type Error struct {
 	GraphQLErrors []GraphQLError
 	// Response keeps the full response for partial-data inspection.
 	Response *Response
+	// Receipts keeps raw HTTP response snapshots observed before this error.
+	// It is populated for HTTP failures that produced a response.
+	Receipts []Receipt
 	// Context holds sanitized diagnostic fields.
 	Context map[string]any
 

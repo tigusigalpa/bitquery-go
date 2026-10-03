@@ -115,6 +115,9 @@ type Response struct {
 	StatusCode int             `json:"-"`
 	Header     map[string][]string
 	RawBody    []byte `json:"-"`
+	// Receipts keeps one raw snapshot for every HTTP response observed while
+	// executing this operation, including retry attempts in chronological order.
+	Receipts []Receipt `json:"-"`
 }
 
 // HasErrors reports whether errors[] is non-empty.

@@ -127,30 +127,37 @@ func (e *Executor) do(ctx context.Context, op Operation) (*Response, error) {
 	log := loggerOrNop(e.cfg.Logger)
 	retried401 := false
 	attempt := 0
+	var receipts []Receipt
 
 	for {
 		attempt++
 		token, err := e.cfg.TokenProvider.Token(ctx)
 		if err != nil {
-			return nil, newError(KindAuthentication, 0, "retrieve access token: "+err.Error(), err)
+			return nil, withReceipts(newError(KindAuthentication, 0, "retrieve access token: "+err.Error(), err), receipts)
 		}
 
-		status, header, body, terr := e.roundTrip(ctx, endpoint, op, token)
+		status, header, body, operationJSON, terr := e.roundTrip(ctx, endpoint, op, token)
+		if status != 0 {
+			receipts = append(receipts, NewReceipt(
+				ReceiptSourceHTTP, ReceiptReceived, endpoint, operationJSON, body, status, time.Now(),
+			))
+		}
 		if terr != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
-				return nil, ctxErr
+				return nil, withReceipts(ctxErr, receipts)
 			}
 			if canRetry && attempt < policy.MaxAttempts {
 				if serr := sleep(ctx, policy.Delay(attempt, 0)); serr != nil {
-					return nil, serr
+					return nil, withReceipts(serr, receipts)
 				}
 				continue
 			}
-			return nil, &Error{Kind: KindTransport, Message: terr.Error(), Temporary: true, cause: terr}
+			return nil, withReceipts(&Error{Kind: KindTransport, Message: terr.Error(), Temporary: true, cause: terr}, receipts)
 		}
 
 		if status >= 200 && status < 300 {
 			resp, parseErr := parseGraphQLResponse(status, header, body)
+			resp.Receipts = append(resp.Receipts, receipts...)
 			if parseErr != nil {
 				return resp, parseErr
 			}
@@ -168,7 +175,7 @@ func (e *Executor) do(ctx context.Context, op Operation) (*Response, error) {
 		if status == http.StatusUnauthorized && canRetry && !retried401 {
 			retried401 = true
 			if _, rerr := e.cfg.TokenProvider.Refresh(ctx); rerr != nil {
-				return nil, rerr
+				return nil, withReceipts(rerr, receipts)
 			}
 			continue
 		}
@@ -178,24 +185,43 @@ func (e *Executor) do(ctx context.Context, op Operation) (*Response, error) {
 
 		if canRetry && (policy.retryableStatus(status) || sharedCompute) && attempt < policy.MaxAttempts {
 			if serr := sleep(ctx, policy.Delay(attempt, retryAfter)); serr != nil {
-				return nil, serr
+				return nil, withReceipts(serr, receipts)
 			}
 			continue
 		}
 
-		return nil, classifyHTTPError(status, body, retryAfter, sharedCompute)
+		apiErr := classifyHTTPError(status, body, retryAfter, sharedCompute)
+		apiErr.Receipts = append(apiErr.Receipts, receipts...)
+		return nil, apiErr
 	}
 }
 
-func (e *Executor) roundTrip(ctx context.Context, endpoint string, op Operation, token string) (int, http.Header, []byte, error) {
+func withReceipts(err error, receipts []Receipt) error {
+	if err == nil || len(receipts) == 0 {
+		return err
+	}
+	var apiErr *Error
+	if errors.As(err, &apiErr) {
+		apiErr.Receipts = append(apiErr.Receipts, receipts...)
+		return err
+	}
+	return &Error{
+		Kind:     KindTransport,
+		Message:  redact.String(err.Error()),
+		Receipts: append([]Receipt(nil), receipts...),
+		cause:    err,
+	}
+}
+
+func (e *Executor) roundTrip(ctx context.Context, endpoint string, op Operation, token string) (int, http.Header, []byte, []byte, error) {
 	payload, err := json.Marshal(op)
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, nil, nil, nil, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, nil, nil, payload, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -204,15 +230,15 @@ func (e *Executor) roundTrip(ctx context.Context, endpoint string, op Operation,
 
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, nil, nil, payload, err
 	}
 	defer resp.Body.Close()
 
 	body, err := readLimited(resp.Body, 64<<20)
 	if err != nil {
-		return resp.StatusCode, resp.Header, nil, err
+		return resp.StatusCode, resp.Header, nil, payload, err
 	}
-	return resp.StatusCode, resp.Header, body, nil
+	return resp.StatusCode, resp.Header, body, payload, nil
 }
 
 func defaultTransport() *http.Transport {

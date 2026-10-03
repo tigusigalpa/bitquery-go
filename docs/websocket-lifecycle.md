@@ -36,9 +36,22 @@ bitquery.WithSubscriptionQueue(500, bitquery.OverflowDropOldest)
 ```
 
 - `drop_oldest` evicts the oldest buffered event and increments `Stream.Dropped()`.
-- `fail` stops the stream with a typed `KindSubscription` error instead of losing an event.
+- `fail` stops the stream with a typed `KindSubscription` error instead of losing an event. It also records a `GapOverflowFail` entry in `Stream.Gaps()`; persist that evidence in the caller's ingestion layer if completeness matters.
 
 Always stop the worker with a cancellable context and call `Stream.Close()` on early return. Bitquery does not end a stream through a GraphQL close message; the socket must be closed.
+
+## Receipts and delivery evidence
+
+`Stream.Receipts()` returns in-memory, immutable snapshots of inbound and
+outbound WebSocket frames. Each snapshot has a redacted target, capture time,
+source and direction, operation hash, and exact raw operation/frame bytes.
+`Event.Receipt` is the matching inbound-frame receipt for delivered events.
+
+`Event.Delivery` has a stream-wide receive sequence and connection epoch. The
+first data event after a reconnect is marked `ReconnectGap: true`, and
+`Stream.Gaps()` records a `GapReconnect` condition. These are observable signs
+that delivery may be discontinuous. They are not proof of loss, do not replay
+anything, and do not provide a completeness guarantee or durable persistence.
 
 ## Recovery checklist
 
