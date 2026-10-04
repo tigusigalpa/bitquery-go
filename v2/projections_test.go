@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tigusigalpa/bitquery-go"
+	"github.com/tigusigalpa/bitquery-go/v2"
 )
 
 func TestPinnedProjectionOperations(t *testing.T) {

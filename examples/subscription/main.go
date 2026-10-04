@@ -12,8 +12,8 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/tigusigalpa/bitquery-go"
-	"github.com/tigusigalpa/bitquery-go/subscription"
+	"github.com/tigusigalpa/bitquery-go/v2"
+	"github.com/tigusigalpa/bitquery-go/v2/subscription"
 )
 
 func main() {

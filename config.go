@@ -58,7 +58,7 @@ func NewConfig(opts ...Option) (*Config, error) {
 		TokenEndpoint:               OAuthTokenEndpoint,
 		Timeout:                     30 * time.Second,
 		Retry:                       DefaultRetryPolicy(),
-		UserAgent:                   "bitquery-go/0.1 (+https://github.com/tigusigalpa/bitquery-go)",
+		UserAgent:                   defaultUserAgent,
 		SubProtocol:                 SubProtocolGraphQLTransportWS,
 		SubscriptionMaxReconnects:   8,
 		SubscriptionQueueCapacity:   1000,

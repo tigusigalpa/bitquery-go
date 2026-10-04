@@ -1,7 +1,7 @@
 package v2
 
 import (
-	"github.com/tigusigalpa/bitquery-go"
+	"github.com/tigusigalpa/bitquery-go/v2"
 )
 
 // Thin, documented V2 document factories: EVM + Solana common domains.

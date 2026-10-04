@@ -13,7 +13,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/tigusigalpa/bitquery-go"
+	"github.com/tigusigalpa/bitquery-go/v2"
 )
 
 // Client is the Bitquery V1 historical GraphQL client (HTTPS only).

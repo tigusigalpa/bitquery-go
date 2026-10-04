@@ -10,8 +10,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/tigusigalpa/bitquery-go"
-	v1 "github.com/tigusigalpa/bitquery-go/v1"
+	"github.com/tigusigalpa/bitquery-go/v2"
+	v1 "github.com/tigusigalpa/bitquery-go/v2/v1"
 )
 
 func main() {

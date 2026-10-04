@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/coder/websocket"
-	"github.com/tigusigalpa/bitquery-go"
+	"github.com/tigusigalpa/bitquery-go/v2"
 )
 
 // coderConn adapts github.com/coder/websocket to the WSConn contract.

@@ -1,4 +1,4 @@
-module github.com/tigusigalpa/bitquery-go
+module github.com/tigusigalpa/bitquery-go/v2
 
 go 1.21
 

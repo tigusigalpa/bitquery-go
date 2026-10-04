@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tigusigalpa/bitquery-go"
-	"github.com/tigusigalpa/bitquery-go/subscription"
-	v2 "github.com/tigusigalpa/bitquery-go/v2"
+	"github.com/tigusigalpa/bitquery-go/v2"
+	"github.com/tigusigalpa/bitquery-go/v2/subscription"
+	v2 "github.com/tigusigalpa/bitquery-go/v2/v2"
 )
 
 func liveToken(t *testing.T) string {

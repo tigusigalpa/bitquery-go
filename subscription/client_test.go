@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tigusigalpa/bitquery-go"
+	"github.com/tigusigalpa/bitquery-go/v2"
 )
 
 // ---- fake connection ------------------------------------------------

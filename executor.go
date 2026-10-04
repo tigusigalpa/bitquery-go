@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tigusigalpa/bitquery-go/internal/redact"
+	"github.com/tigusigalpa/bitquery-go/v2/internal/redact"
 )
 
 // Executor runs GraphQL operations for one explicit API version. It is

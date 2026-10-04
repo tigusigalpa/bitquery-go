@@ -9,7 +9,7 @@ package v2
 import (
 	"context"
 
-	"github.com/tigusigalpa/bitquery-go"
+	"github.com/tigusigalpa/bitquery-go/v2"
 )
 
 // Client is the Bitquery V2 streaming GraphQL client (HTTPS queries).

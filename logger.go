@@ -1,7 +1,7 @@
 package bitquery
 
 import (
-	"github.com/tigusigalpa/bitquery-go/internal/redact"
+	"github.com/tigusigalpa/bitquery-go/v2/internal/redact"
 )
 
 // Logger is a minimal structured logger (slog-compatible shape).

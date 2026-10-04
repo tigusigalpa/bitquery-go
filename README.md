@@ -9,7 +9,7 @@
 [![CodeQL](https://github.com/tigusigalpa/bitquery-go/actions/workflows/codeql.yml/badge.svg?branch=main)](https://github.com/tigusigalpa/bitquery-go/actions/workflows/codeql.yml)
 [![Codecov](https://codecov.io/gh/tigusigalpa/bitquery-go/graph/badge.svg)](https://codecov.io/gh/tigusigalpa/bitquery-go)
 [![GitHub Release](https://img.shields.io/github/v/release/tigusigalpa/bitquery-go?style=flat-square)](https://github.com/tigusigalpa/bitquery-go/releases)
-[![GoDoc](https://img.shields.io/badge/godoc-reference-blue?style=flat-square&logo=go)](https://pkg.go.dev/github.com/tigusigalpa/bitquery-go)
+[![GoDoc](https://img.shields.io/badge/godoc-reference-blue?style=flat-square&logo=go)](https://pkg.go.dev/github.com/tigusigalpa/bitquery-go/v2)
 
 `bitquery-go` is a production-oriented Go SDK for Bitquery GraphQL. It keeps the two Bitquery contracts deliberately separate:
 
@@ -18,7 +18,7 @@
 
 The library never rewrites a document, changes an endpoint, or falls back from one version to the other. That matters because V1 and V2 have different schemas and coverage.
 
-- Module: `github.com/tigusigalpa/bitquery-go`
+- Module: `github.com/tigusigalpa/bitquery-go/v2`
 - Go: **1.21 or newer** (CI covers Go 1.21–1.26)
 - License: MIT — © Igor Sazonov
 
@@ -35,10 +35,25 @@ V1 still has legacy coverage, but Bitquery marks Ethereum, BSC, Matic/Polygon an
 ## Install
 
 ```bash
-go get github.com/tigusigalpa/bitquery-go
+go get github.com/tigusigalpa/bitquery-go/v2
 ```
 
 Creating a client makes no network request. Requests happen only when you call `Execute`; a socket is opened only when you call `Subscribe`.
+
+## Migrating to v2.0.0
+
+Version 2 adopts Go semantic import versioning. Change the root import from
+`github.com/tigusigalpa/bitquery-go` to
+`github.com/tigusigalpa/bitquery-go/v2`. The client packages keep their
+existing directories, so their new import paths are:
+
+- V1 client: `github.com/tigusigalpa/bitquery-go/v2/v1`
+- V2 client: `github.com/tigusigalpa/bitquery-go/v2/v2`
+- Subscriptions: `github.com/tigusigalpa/bitquery-go/v2/subscription`
+
+The release also makes the already documented dynamic GraphQL error values
+precision-safe: values in `GraphQLError.Path`, `Locations`, and `Extensions`
+are `json.Number`, not `float64`. Update code that type-asserts those values.
 
 ## Authentication: choose one safe source of tokens
 

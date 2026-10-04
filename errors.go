@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/tigusigalpa/bitquery-go/internal/redact"
+	"github.com/tigusigalpa/bitquery-go/v2/internal/redact"
 )
 
 // Kind classifies SDK errors for errors.Is checks.

@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/tigusigalpa/bitquery-go/internal/redact"
+	"github.com/tigusigalpa/bitquery-go/v2/internal/redact"
 )
 
 // ReceiptSource identifies the transport that produced a raw receipt.

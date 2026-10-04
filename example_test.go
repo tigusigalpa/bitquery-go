@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/tigusigalpa/bitquery-go"
-	v1 "github.com/tigusigalpa/bitquery-go/v1"
-	v2 "github.com/tigusigalpa/bitquery-go/v2"
+	"github.com/tigusigalpa/bitquery-go/v2"
+	v1 "github.com/tigusigalpa/bitquery-go/v2/v1"
+	v2 "github.com/tigusigalpa/bitquery-go/v2/v2"
 )
 
 // Example_v1 — the V1 historical GraphQL client (HTTPS only).

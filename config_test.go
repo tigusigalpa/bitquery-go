@@ -60,6 +60,21 @@ func TestNewConfigAppliesOptions(t *testing.T) {
 	}
 }
 
+func TestDefaultUserAgentUsesSDKVersion(t *testing.T) {
+	config, err := NewConfig(WithTokenProvider(NewStaticTokenProvider("token")))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const want = "bitquery-go/2.0.0 (+https://github.com/tigusigalpa/bitquery-go)"
+	if Version != "2.0.0" {
+		t.Fatalf("Version = %q, want %q", Version, "2.0.0")
+	}
+	if config.UserAgent != want {
+		t.Fatalf("default UserAgent = %q, want %q", config.UserAgent, want)
+	}
+}
+
 func TestNewConfigRejectsInvalidValues(t *testing.T) {
 	provider := WithTokenProvider(NewStaticTokenProvider("token"))
 	tests := []struct {

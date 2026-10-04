@@ -10,7 +10,7 @@ reproduction path where possible.
 
 | Version | Supported |
 | --- | --- |
-| 0.1.x | Yes (latest minor) |
+| 2.0.x | Yes (latest minor) |
 
 ## Credential handling model
 

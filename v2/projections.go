@@ -1,6 +1,6 @@
 package v2
 
-import "github.com/tigusigalpa/bitquery-go"
+import "github.com/tigusigalpa/bitquery-go/v2"
 
 // EVMSource makes the top-level EVM dataset choices explicit for a pinned
 // projection. Dataset and SelectBlocks use bitquery.Optional so callers can

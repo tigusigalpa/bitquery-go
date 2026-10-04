@@ -3,7 +3,7 @@
 All notable changes to `bitquery-go` are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2.0.0] — Unreleased
 
 ### Added
 - Query HTTP `Receipt.HTTPBody` lifecycle evidence and
@@ -28,6 +28,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   surfaced through terminal errors, gap entries and dropped-record counters.
 
 ### Changed
+- The module path is now `github.com/tigusigalpa/bitquery-go/v2`, following
+  Go semantic import versioning. Root imports must use `/v2`; client imports
+  become `/v2/v1`, `/v2/v2`, and `/v2/subscription`.
+- The SDK exposes `bitquery.Version` (`"2.0.0"`), and its default User-Agent
+  now includes that release version.
 - Dynamic numeric values in `GraphQLError.Path`, `Locations`, and
   `Extensions` now use `json.Number` rather than `float64`.
 - `GraphQLError.Raw` preserves the exact original JSON entry instead of a

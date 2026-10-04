@@ -1,7 +1,7 @@
 package v1
 
 import (
-	"github.com/tigusigalpa/bitquery-go"
+	"github.com/tigusigalpa/bitquery-go/v2"
 )
 
 // Thin, documented V1 document factories for common domains. These are

@@ -12,8 +12,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/tigusigalpa/bitquery-go"
-	v2 "github.com/tigusigalpa/bitquery-go/v2"
+	"github.com/tigusigalpa/bitquery-go/v2"
+	v2 "github.com/tigusigalpa/bitquery-go/v2/v2"
 )
 
 func main() {

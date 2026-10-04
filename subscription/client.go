@@ -26,8 +26,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/tigusigalpa/bitquery-go"
-	"github.com/tigusigalpa/bitquery-go/internal/redact"
+	"github.com/tigusigalpa/bitquery-go/v2"
+	"github.com/tigusigalpa/bitquery-go/v2/internal/redact"
 )
 
 // EventType classifies stream events.
