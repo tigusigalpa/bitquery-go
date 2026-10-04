@@ -40,7 +40,7 @@ go get github.com/tigusigalpa/bitquery-go/v2
 
 Creating a client makes no network request. Requests happen only when you call `Execute`; a socket is opened only when you call `Subscribe`.
 
-## Migrating to v2+
+## Migrating to v2.0.0
 
 Version 2 adopts Go semantic import versioning. Change the root import from
 `github.com/tigusigalpa/bitquery-go` to
