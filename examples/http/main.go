@@ -6,6 +6,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -42,8 +43,13 @@ func main() {
 		}`,
 	})
 	if err != nil {
+		var apiErr *bitquery.Error
+		if errors.As(err, &apiErr) {
+			logHTTPReceipts(apiErr.Receipts)
+		}
 		log.Fatalf("execute: %v", err)
 	}
+	logHTTPReceipts(resp.Receipts)
 	if resp.HasErrors() {
 		for _, ge := range resp.Errors {
 			log.Printf("graphql error: %s", ge.Message)
@@ -58,4 +64,22 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Printf("%v\n", data)
+}
+
+func logHTTPReceipts(receipts []bitquery.Receipt) {
+	for _, receipt := range receipts {
+		if !receipt.HTTPBody.Applicable {
+			continue
+		}
+		log.Printf(
+			"http receipt status=%d complete=%t read_complete=%t read_error=%t limit_exceeded=%t close_error=%t operation_sha256=%s",
+			receipt.StatusCode,
+			receipt.HTTPBody.Complete,
+			receipt.HTTPBody.ReadComplete,
+			receipt.HTTPBody.ReadError,
+			receipt.HTTPBody.LimitExceeded,
+			receipt.HTTPBody.CloseError,
+			receipt.OperationSHA256,
+		)
+	}
 }

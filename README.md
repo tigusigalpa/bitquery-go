@@ -176,6 +176,26 @@ operation SHA-256, and defensive copies of the exact serialized operation and
 raw body. The SDK keeps receipts only in memory; persist them yourself when
 you need durable lineage.
 
+For query HTTP receipts, `receipt.HTTPBody` records the body lifecycle. Its
+zero value is **unknown/not applicable** for WebSocket receipts and for
+receipts built with `NewReceipt`. `Complete` means only that the SDK read and
+closed that HTTP body without an error; it does not prove dataset coverage,
+finality, or a complete GraphQL result. `ReadComplete`, `ReadError`,
+`LimitExceeded`, and `CloseError` distinguish the observed phases.
+
+When a query body exceeds the response limit, the receipt preserves at most
+the configured limit plus one control byte that proves overflow. A read or
+close failure preserves every byte made available before the failure. These
+attempts return an error rather than parsing a JSON-looking prefix as a
+successful response; inspect `Error.Receipts` and use `errors.Is(err,
+bitquery.ErrResponseTooLarge)` or the original reader/closer error as needed.
+
+`GraphQLError.Raw` now retains the exact JSON for each `errors[]` entry.
+Numbers inside dynamic `GraphQLError.Path`, `Locations`, and `Extensions` are
+`json.Number`, not `float64`. If an application previously asserted
+`float64`, update it to handle `json.Number` and perform an explicit
+conversion suitable for the value.
+
 ## Regions and endpoint overrides
 
 The default is Europe. Choose the closest region for your deployment:

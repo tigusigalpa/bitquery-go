@@ -65,6 +65,9 @@ func TestReceiptSnapshotsRawOperationAndFrame(t *testing.T) {
 	if receipt.CapturedAt.Location() != time.UTC || len(receipt.OperationSHA256) != 64 {
 		t.Fatalf("receipt metadata = %+v", receipt)
 	}
+	if receipt.HTTPBody.Applicable {
+		t.Fatalf("WebSocket receipt must not invent HTTP body evidence: %+v", receipt.HTTPBody)
+	}
 }
 
 func TestHTTPReceiptsCaptureEveryRetryResponse(t *testing.T) {

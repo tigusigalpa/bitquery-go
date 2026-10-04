@@ -136,11 +136,9 @@ func (e *Executor) do(ctx context.Context, op Operation) (*Response, error) {
 			return nil, withReceipts(newError(KindAuthentication, 0, "retrieve access token: "+err.Error(), err), receipts)
 		}
 
-		status, header, body, operationJSON, terr := e.roundTrip(ctx, endpoint, op, token)
+		status, header, body, operationJSON, bodyEvidence, terr := e.roundTrip(ctx, endpoint, op, token)
 		if status != 0 {
-			receipts = append(receipts, NewReceipt(
-				ReceiptSourceHTTP, ReceiptReceived, endpoint, operationJSON, body, status, time.Now(),
-			))
+			receipts = append(receipts, NewHTTPReceipt(endpoint, operationJSON, body, status, time.Now(), bodyEvidence))
 		}
 		if terr != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
@@ -152,7 +150,14 @@ func (e *Executor) do(ctx context.Context, op Operation) (*Response, error) {
 				}
 				continue
 			}
-			return nil, withReceipts(&Error{Kind: KindTransport, Message: terr.Error(), Temporary: true, cause: terr}, receipts)
+			return nil, withReceipts(&Error{
+				Kind:       KindTransport,
+				StatusCode: status,
+				Message:    redact.String(terr.Error()),
+				Temporary:  true,
+				Context:    map[string]any{"status": status},
+				cause:      terr,
+			}, receipts)
 		}
 
 		if status >= 200 && status < 300 {
@@ -213,15 +218,15 @@ func withReceipts(err error, receipts []Receipt) error {
 	}
 }
 
-func (e *Executor) roundTrip(ctx context.Context, endpoint string, op Operation, token string) (int, http.Header, []byte, []byte, error) {
+func (e *Executor) roundTrip(ctx context.Context, endpoint string, op Operation, token string) (int, http.Header, []byte, []byte, HTTPBodyEvidence, error) {
 	payload, err := json.Marshal(op)
 	if err != nil {
-		return 0, nil, nil, nil, err
+		return 0, nil, nil, nil, HTTPBodyEvidence{}, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
 	if err != nil {
-		return 0, nil, nil, payload, err
+		return 0, nil, nil, payload, HTTPBodyEvidence{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
@@ -230,15 +235,19 @@ func (e *Executor) roundTrip(ctx context.Context, endpoint string, op Operation,
 
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
-		return 0, nil, nil, payload, err
+		return 0, nil, nil, payload, HTTPBodyEvidence{}, err
 	}
-	defer resp.Body.Close()
 
-	body, err := readLimited(resp.Body, 64<<20)
-	if err != nil {
-		return resp.StatusCode, resp.Header, nil, payload, err
+	body, evidence, readErr := readLimitedEvidence(resp.Body, 64<<20)
+	closeErr := resp.Body.Close()
+	if closeErr != nil {
+		evidence.CloseError = true
+		evidence.Complete = false
 	}
-	return resp.StatusCode, resp.Header, body, payload, nil
+	if readErr != nil || closeErr != nil {
+		return resp.StatusCode, resp.Header, body, payload, evidence, errors.Join(readErr, closeErr)
+	}
+	return resp.StatusCode, resp.Header, body, payload, evidence, nil
 }
 
 func defaultTransport() *http.Transport {
@@ -257,9 +266,9 @@ func parseGraphQLResponse(status int, header http.Header, body []byte) (*Respons
 	}
 
 	var decoded struct {
-		Data       json.RawMessage  `json:"data"`
-		Errors     []map[string]any `json:"errors"`
-		Extensions json.RawMessage  `json:"extensions"`
+		Data       json.RawMessage   `json:"data"`
+		Errors     []json.RawMessage `json:"errors"`
+		Extensions json.RawMessage   `json:"extensions"`
 	}
 	if err := json.Unmarshal(body, &decoded); err != nil {
 		return resp, &Error{
@@ -275,29 +284,53 @@ func parseGraphQLResponse(status int, header http.Header, body []byte) (*Respons
 	resp.Data = decoded.Data
 	resp.Extensions = decoded.Extensions
 	for _, raw := range decoded.Errors {
-		rawJSON, _ := json.Marshal(raw)
-		ge := GraphQLError{Raw: rawJSON}
-		if m, ok := raw["message"].(string); ok {
+		ge := GraphQLError{Raw: append(json.RawMessage(nil), raw...)}
+		values, err := decodeJSONUseNumber(raw)
+		if err != nil {
+			return resp, graphQLParseError(status, resp, "parse GraphQL error entry", err)
+		}
+		if m, ok := values["message"].(string); ok {
 			ge.Message = m
 		} else {
 			ge.Message = "unknown GraphQL error"
 		}
-		if loc, ok := raw["locations"].([]any); ok {
+		if loc, ok := values["locations"].([]any); ok {
 			for _, l := range loc {
 				if lm, ok := l.(map[string]any); ok {
 					ge.Locations = append(ge.Locations, lm)
 				}
 			}
 		}
-		if p, ok := raw["path"].([]any); ok {
+		if p, ok := values["path"].([]any); ok {
 			ge.Path = p
 		}
-		if ext, ok := raw["extensions"].(map[string]any); ok {
+		if ext, ok := values["extensions"].(map[string]any); ok {
 			ge.Extensions = ext
 		}
 		resp.Errors = append(resp.Errors, ge)
 	}
 	return resp, nil
+}
+
+func decodeJSONUseNumber(raw []byte) (map[string]any, error) {
+	var values map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&values); err != nil {
+		return nil, err
+	}
+	return values, nil
+}
+
+func graphQLParseError(status int, resp *Response, action string, cause error) *Error {
+	return &Error{
+		Kind:       KindTransport,
+		StatusCode: status,
+		Message:    action + ": " + redact.String(cause.Error()),
+		Response:   resp,
+		Context:    map[string]any{"status": status},
+		cause:      cause,
+	}
 }
 
 func classifyHTTPError(status int, body []byte, retryAfter time.Duration, sharedCompute bool) *Error {

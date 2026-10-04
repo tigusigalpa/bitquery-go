@@ -6,6 +6,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Query HTTP `Receipt.HTTPBody` lifecycle evidence and
+  `ErrResponseTooLarge`. Failed reads, response-limit overflows and close
+  failures retain the exact available body bytes without turning a JSON-looking
+  prefix into a successful response.
+
 - Optional pinned V2 EVM query projections for BQ1 transactions, BQ2 DEX
   trades, BQ3 balances/holders/transaction balances, and BQ4 decoded events.
   Their `EVMSource` preserves explicit dataset and block-selection choices,
@@ -21,6 +26,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `DrainReceipts()` transfer semantics, and synchronous
   `WithSubscriptionReceiptObserver` backpressure. Receipt or observer loss is
   surfaced through terminal errors, gap entries and dropped-record counters.
+
+### Changed
+- Dynamic numeric values in `GraphQLError.Path`, `Locations`, and
+  `Extensions` now use `json.Number` rather than `float64`.
+- `GraphQLError.Raw` preserves the exact original JSON entry instead of a
+  re-serialized, potentially precision-losing representation.
+
+### Fixed
+- A WebSocket read failure after `connection_ack` now resets the reconnect
+  failure budget correctly for both supported GraphQL WebSocket protocols.
+- A `complete` frame that overflows an `OverflowFail` event queue now produces
+  a terminal error, gap evidence and its raw receipt instead of a clean close.
+- Query HTTP bodies now close exactly once; read and close errors remain
+  independently visible through `errors.Is`.
 
 ## [0.1.0] — Unreleased
 

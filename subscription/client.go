@@ -469,7 +469,7 @@ func (c *Client) serve(ctx context.Context, conn bitquery.WSConn, operationJSON 
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
-			return false, false, err
+			return false, acknowledged, err
 		}
 		receivedAt := time.Now().UTC()
 		delivery := stream.nextDelivery(epoch, receivedAt)
@@ -536,12 +536,14 @@ func (c *Client) serve(ctx context.Context, conn bitquery.WSConn, operationJSON 
 			if !acknowledged {
 				return false, false, fatal(bitquery.Wrap(bitquery.KindSubscription, "received complete before connection_ack", nil))
 			}
-			_ = c.enqueue(ctx, stream, events, Event{
+			if err := c.enqueue(ctx, stream, events, Event{
 				Type:     EventComplete,
 				Raw:      append(json.RawMessage(nil), data...),
 				Delivery: delivery,
 				Receipt:  receipt,
-			})
+			}); err != nil {
+				return false, acknowledged, err
+			}
 			return true, true, nil
 
 		default:
@@ -581,7 +583,9 @@ func (c *Client) enqueue(ctx context.Context, stream *Stream, events chan Event,
 			ReceiveSequence: ev.Delivery.ReceiveSequence,
 			ObservedAt:      time.Now().UTC(),
 		})
-		return fatal(&bitquery.Error{Kind: bitquery.KindSubscription, Message: "subscription event queue overflow (bounded buffer full)"})
+		apiErr := bitquery.Wrap(bitquery.KindSubscription, "subscription event queue overflow (bounded buffer full)", nil)
+		apiErr.Receipts = []bitquery.Receipt{ev.Receipt}
+		return fatal(apiErr)
 	default: // drop_oldest
 		select {
 		case <-events:

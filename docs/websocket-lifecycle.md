@@ -38,6 +38,10 @@ bitquery.WithSubscriptionQueue(500, bitquery.OverflowDropOldest)
 - `drop_oldest` evicts the oldest buffered event and increments `Stream.Dropped()`.
 - `fail` stops the stream with a typed `KindSubscription` error instead of losing an event. It also records a `GapOverflowFail` entry in `Stream.Gaps()`; persist that evidence in the caller's ingestion layer if completeness matters.
 
+If a `complete` frame cannot enter a `fail` queue, it is also terminal rather
+than a clean completion. The terminal error retains that frame's raw receipt;
+it does not reconnect or claim that the subscription completed successfully.
+
 `drop_oldest` is appropriate only when loss is acceptable. For
 completeness-sensitive ingestion, choose `OverflowFail`; a dropped-event
 counter cannot establish coverage or reconstruct a missing delivery.

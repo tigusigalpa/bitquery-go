@@ -41,6 +41,32 @@ different from transport failures:
   produces `*Error{Kind: KindGraphQL}` — and `be.Response` still holds
   the full response, partial data included.
 
+`GraphQLError.Raw` is the exact JSON representation of the individual error
+entry. Convenience values in `GraphQLError.Path`, `Locations`, and
+`Extensions` decode numbers as `json.Number`; this is an intentional
+compatibility change from `float64` so large identifiers, decimal lexemes and
+exponent notation are not silently altered. Handle `json.Number` explicitly
+when consuming those dynamic fields.
+
+## HTTP body evidence
+
+Each query HTTP receipt has an `HTTPBody` value. Its zero value means unknown
+or not applicable (for example, WebSocket receipts). For HTTP responses,
+`Complete` means the SDK read and closed that body without error. It does not
+mean the provider result is complete, final, ordered, or free of delivery gaps.
+
+- `ReadComplete` distinguishes a complete read from a read failure.
+- `LimitExceeded` records a response that exceeded the SDK limit. The raw
+  receipt stores at most `limit + 1` bytes — the final byte is a control byte
+  proving overflow — and `errors.Is(err, bitquery.ErrResponseTooLarge)` works.
+- `ReadError` and `CloseError` can both be true. Available body bytes remain
+  in the receipt, and `errors.Is` continues to match both underlying errors.
+
+A read/limit/close failure is never parsed into a successful `Response`, even
+when its available prefix is valid JSON. Inspect `Error.Receipts` for the
+captured raw evidence. OAuth token bodies intentionally remain outside this
+receipt contract so token diagnostics cannot expose secrets.
+
 ## Retry semantics (defaults follow official guidance)
 
 - `MaxAttempts: 4`, `BaseDelay: 5s`, `MaxDelay: 60s`, `Jitter: 0.25`.

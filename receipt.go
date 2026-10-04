@@ -31,6 +31,32 @@ const (
 	ReceiptSent ReceiptDirection = "sent"
 )
 
+// HTTPBodyEvidence describes the lifecycle of an HTTP response body captured
+// by a query receipt. Its zero value is unknown or not applicable, which is
+// used by WebSocket receipts and by receipts created with NewReceipt.
+//
+// Complete means the query path read and closed the HTTP body without an
+// error. It says nothing about GraphQL completeness, dataset coverage,
+// finality, or subscription delivery.
+type HTTPBodyEvidence struct {
+	// Applicable reports whether this receipt was captured by the query HTTP
+	// body lifecycle. It is false for WebSocket and generic NewReceipt values.
+	Applicable bool
+	// ReadComplete reports that the response body was read without an error or
+	// response-limit overflow. It can be true when CloseError is also true.
+	ReadComplete bool
+	// Complete reports that both reading and closing the HTTP response body
+	// succeeded. It has no GraphQL, dataset, or finality meaning.
+	Complete bool
+	// LimitExceeded reports that the raw receipt includes a control byte beyond
+	// the configured response limit.
+	LimitExceeded bool
+	// ReadError reports that body.Read returned an error.
+	ReadError bool
+	// CloseError reports that body.Close returned an error after the read.
+	CloseError bool
+}
+
 // Receipt is an immutable snapshot that correlates a raw HTTP response or
 // WebSocket frame with the exact serialized GraphQL operation that produced
 // it. Target is redacted before storage; Operation and Raw return defensive
@@ -45,9 +71,22 @@ type Receipt struct {
 	CapturedAt      time.Time
 	StatusCode      int
 	OperationSHA256 string
+	// HTTPBody describes the observed query HTTP body lifecycle. It is unknown
+	// or not applicable for WebSocket receipts and NewReceipt callers.
+	HTTPBody HTTPBodyEvidence
 
 	operation json.RawMessage
 	raw       json.RawMessage
+}
+
+// NewHTTPReceipt captures a query HTTP response together with its body
+// lifecycle evidence. raw contains every byte made available by the body
+// reader, including the one control byte read beyond a configured size limit.
+// It does not imply that the response contains a complete dataset.
+func NewHTTPReceipt(target string, operation, raw []byte, statusCode int, capturedAt time.Time, body HTTPBodyEvidence) Receipt {
+	receipt := NewReceipt(ReceiptSourceHTTP, ReceiptReceived, target, operation, raw, statusCode, capturedAt)
+	receipt.HTTPBody = body
+	return receipt
 }
 
 // ReceiptObserver synchronously receives a captured subscription receipt. It

@@ -43,7 +43,8 @@ bitquery-go
    (HTTP) or `?token=` (WSS, the only Bitquery-supported method). All
    error messages and log paths pass through `internal/redact`.
 5. **Precision is preserved.** `Response.Data` stays `json.RawMessage`;
-   `DecodeData` uses `json.Number`. No float64 coercion anywhere.
+   `DecodeData` and dynamic GraphQL diagnostic fields use `json.Number`.
+   `GraphQLError.Raw` retains the original error-entry bytes.
 6. **Race-safe.** `Stream` state is mutex/atomic-guarded; retry jitter
    is synchronized; `go test -race` is part of the required CI suite.
 7. **Raw evidence is bounded.** HTTP retries produce `Receipt` snapshots;
@@ -51,6 +52,8 @@ bitquery-go
    callback. Receipts have a redacted target, capture time, exact
    operation/frame bytes and a SHA-256 operation hash. The SDK never persists
    them or infers completeness from reconnects.
+   Query HTTP receipts also describe whether their body read, response limit,
+   and close lifecycle completed; this is transport evidence only.
 
 ## Subscription lifecycle
 
